@@ -1,6 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude, TypeSynonymInstances, RankNTypes, StandaloneDeriving,
 ScopedTypeVariables, TypeApplications, GADTs, TypeOperators, 
-FlexibleInstances, AllowAmbiguousTypes, UndecidableInstances #-}
+FlexibleInstances, AllowAmbiguousTypes, UndecidableInstances, TypeFamilies, LambdaCase #-}
 module Lib
     where
 import Numeric.LinearAlgebra
@@ -8,6 +8,83 @@ import Control.Category
 import Prelude hiding ((.), id)
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
+
+
+
+{-
+type V a = a -> Double
+type D a = a -> Double
+D (V a)
+type V a  = ContT () Q a -- ContT b Q a = (a ->Q b) -> Q b. Has some way of dealing with a index. Some kind of
+SelT -- takes a diag, unsummed?
+-- (a -> Q b) -> Q a
+
+newtype Dag a = Dag (a -> Q ())
+
+class Dagger a where
+    type Dual :: * -> * -- *?
+    dag :: a -> Dual a
+instance Dagger (D (Vec a)) where
+    type Dual = Vec
+    dag (D v) = join $ ContT ()
+-- dagger needs to embed a search procedure?
+
+instance Dagger (D (Vec Bool)) where
+    type Dual = Vec Bool
+    dag (D v) = join $ ContT ()
+instance Dagger a b where
+    dag :: a -> b
+    dag' :: b -> a
+instance Dagger k where
+    type family Dual :: * -> *
+    dag :: k a (Dual a) -- dag'?
+
+-- also a kind of dot product
+dag1 :: ((a -> Q ()) -> Q ()) -> (((a -> Q ()) -> Q ()) -> Q ()
+dag1 f = 
+
+-- it's a kind of dot product.
+lift :: f Double -> (a -> Double) -> Double
+lift w f = fold (+) $ (mapWithIndex \k v -> (f k) * v) w
+
+-- tensor is a_i b_i, mutiply out without summing
+tensor :: f a ->  f a  -> f a
+tensor = intersectWith (*)
+
+type V' a = (a -> Q ()) -> Q ()
+tensor :: V' a -> V' a -> V' a
+
+dag :: (V' Bool -> Q ()) -> V' Bool
+dag f = \g -> True False
+
+dag :: (Bool -> Q ()) -> V' Bool
+dag :: (Bool -> Q ()) -> (Bool -> Q ()) -> Q ()
+dag f g = (f True) (g True) + (f False) (g False)
+
+
+
+dag :: (Bool -> Q ()) -> Q Bool
+dag f = (f True) >>= true + (f False) >>= false
+
+dag :: Q Bool -> (Bool -> Q ())
+dag xs b = lookup b xs 
+dag :: Eq a => Q a -> (a -> Q ()) -- maybe Ord
+dag xs b = lookup b xs 
+
+-- If we mixed Hedges select sat solver with the Q monad?
+-- (Bool -> Q Bool) -> Q Bool ? the unsummed trace? diag? Hedgest hing would come out weirder.
+
+
+true :: () -> Q Bool
+true _ = pure True
+false :: () -> Q Bool
+false _ = pure False
+
+-- the seelect function.
+-- (b -> m ()) -> m b
+
+-}
+
 
 type M = Matrix Double
 
@@ -157,6 +234,73 @@ fuse = QuadFun m 0 0 where -- 2 inputs, 1 lagrange multiplier.
 
 -- The analog for this slicing for convex sets may be to slice the 
 -- dimensions into in and out dimensions. Then 
+
+
+
+data Cell a = Cell {phi :: Double, j :: Double, next :: a} deriving Show-- composition of cell is a statically sized vector
+data Lens a b = Lens (a -> (b, b -> a))
+-- SLens s a b = SLens (a -> ST s (b, b -> ST s a)) mutable update
+-- MLens a b = MLens (a -> m (b , b -> m a)) -- monadic lens
+-- 
+comp :: Lens b c -> Lens a b -> Lens a c
+comp (Lens f) (Lens g) = Lens $ \x -> let (y, g') = g x in
+                                      let (z, f') = f y in
+                                      (z, g' . f')
+
+-- Gauss Seidel of the standard 1 -2 1 matrix
+-- j1 is the effective source incliuding the influence from phi values up in the stack
+-- Double Cell construction is rather wonky
+-- gaussK :: Vec (S (S n)) Double -> Vec (S n)
+-- we could also go for the lagrange mutiplier interface.
+-- can also push the rho value needed for stability up and down.
+
+-- -2 phi1 + 1 phi2 = ~j1
+-- -1 phi1 + -2 phi2 + ...? = j2
+
+{-
+We are moving the lower diagonal to the right hand side as the splitting.
+That ends up to claculating an effective j based on previous values.
+We then triangular solve the upper diagonal, which we are able to find the new diagonal element in terms of the lower values.
+
+-}
+-- it's kind of weird that we mutate j on the way down but restore it on the way up.
+-- But we do need a way to access j. (Phi (Phi a), J a) (Phi )
+
+gaussK :: Lens (Cell (Cell a)) (Cell a) -- we need the context Cell
+gaussK = Lens $ \case (Cell phi1 j1 (Cell phi2 j2 y)) -> (Cell phi2 (j2 - phi1) y , \case (Cell phi2' j2' z) -> let j1' = j1 - phi2' in  -- moving the triangular upsolve to the right hand side
+                                                                                                             Cell (- j1' / 2) j1 (Cell phi2' j2 z))
+
+
+
+g2 :: Lens (Cell (Cell (Cell a))) (Cell a)
+g2 = gaussK `comp` gaussK
+g4 = g2 `comp` g2
+g8 = g4 `comp` g4
+g16 = g8 `comp` g8
+g32 = g16 `comp` g16
+
+capZero :: Lens (Cell ()) () -- not even sure i really need this? does runGauss (f `comp` capZero) ~ runGauss f
+capZero = Lens $ \case (Cell phi j _) -> ((), \_ -> Cell (- j / 2) j ())
+
+-- runGauss ::  Lens a b -> a -> a -- removes the open ended nature of the thing.
+runGauss ::  Lens a () -> a -> a -- this might make more sense as what you really want. This is some kind of cap operation.
+runGauss (Lens f) x = let (y , trisolve)  = f x in trisolve y
+startingVal :: Cell (Cell (Cell ()))
+startingVal = (Cell 0 0 (Cell 0 1 (Cell 0 0 ())))
+
+iters = iterate (runGauss (capZero `comp` g2)) startingVal
+--iters' = iterate (runGauss g2) startingVal -- They are different. 
+
+sol = ((3><3) [-2,1,0,
+               1,-2,1,
+               0,1,-2])  <\> (vector [0,1,0])
+
+-- can do inner block solves also (via an iterative method perhaps)
+-- this is reminsecent of a multiscale attack.
+
+-- we can change this all into a continuation form
+-- 
+
 {-
 par :: forall a b c d. (BEnum a, BEnum b, BEnum c, BEnum d) => BMatrix a b -> 
                          BMatrix c d -> BMatrix (a,c) (b,d)
