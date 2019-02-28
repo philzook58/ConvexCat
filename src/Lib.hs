@@ -1,11 +1,12 @@
 {-# LANGUAGE NoImplicitPrelude, TypeSynonymInstances, RankNTypes, StandaloneDeriving,
-ScopedTypeVariables, TypeApplications, GADTs, TypeOperators, 
+ScopedTypeVariables, TypeApplications, GADTs, TypeOperators, DeriveTraversable,
 FlexibleInstances, AllowAmbiguousTypes, UndecidableInstances, TypeFamilies, LambdaCase #-}
 module Lib
     where
 import Numeric.LinearAlgebra
 import Control.Category
 import Prelude hiding ((.), id)
+import Control.Arrow ((***))
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
 
@@ -237,11 +238,82 @@ fuse = QuadFun m 0 0 where -- 2 inputs, 1 lagrange multiplier.
 
 
 
-data Cell a = Cell {phi :: Double, j :: Double, next :: a} deriving Show-- composition of cell is a statically sized vector
-data Lens a b = Lens (a -> (b, b -> a))
+data Cell a = Cell {phi :: Double, j :: Double, next :: a} deriving (Show, Traversable, Foldable, Functor) -- composition of cell is a statically sized vector. Derive applicative?
+
+
+
+instance Applicative Cell where
+    pure x = Cell 0 0 x
+    (Cell phi1 j1 f) <*> (Cell phi2 j2 x) = Cell (phi1 + phi2) (j1 + j2) (f x) -- ? I doubt this makes any sense.
+{-
+data Cell a = Cell { phi :: a, j :: a}
+type f :+: g = Product f g
+gaussK :: Lens ((Cell :+: Cell) a) (Cell a)
+
+gaussK :: -> Lens (Cell :*: f a) -- no Cell is very not this.
+
+type Row = (Cell Cell Cell Cell Cell)
+
+
+Lens (a, b, other) (b, other)
+
+
+gaussK :: Lens 
+
+data Cell2 f a b = Cell2 {phi :: a , j :: a, next :: f b} 
+data Cell2 f a = Cell2 {phi :: f Double a , j ::f Double, next :: f a} 
+
+-- zipA :: f a -> f b -> f (a,b) 
+-- zipA x y = (,) <$> x <*> y 
+-- monProd
+
+fmap2 = fmap . fmap
+fmap4 = fmap2 . fmap2
+fmap8 = fmap4 . fmap4
+
+zipA x y = (,) <$> x <*> y 
+zip2 = zipA . (fmap zipA) -- hmm. Maybe we should be using Compose. we're going to need famp2. Compose will get us these instances for free.
+zip4 = zip2 . (fmap2 zip2)
+zip8 = zip4 . (fmap4 zip4)
+
+
+parK :: Lens (f b) b -> Lens (g a) a -> Lens (f g a) a
+parK :: forall b. Lens (f b) (f' b) -> Lens (g a) (g' a) -> Lens (f g a) (f' (g' a))
+parK :: forall b. Lens (f g a) (f' g a) -> Lens (g a) (g' a) -> Lens (f g a) (f' (g' a))
+parK = compose (fmap l2) l1
+
+
+
+
+Do the y direction inductively
+
+ydir :: Lens (Cell a, Cell a) (a,a)
+ydir = \(Cell phi j x, Cell phi2 j2 y) -> ((x,y), \(x',y') -> (Cell phi j x, Cell phi2 j2 y)      )
+
+
+ydir :: Lens (Cell a, Cell a) (a,a)
+ydir = \(a,b) -> ((Cell phi j x) , f) = (gaussK a) in ((Cell phi j y) , g) = (gaussK b) in 
+
+Lens ( (X (), (X (), a) (X (), a)
+ydir = \(r1, (r2, z) ->  zip8    )    -- = gaussK r1 in  = gaussK r2 in 
+
+Lens (f a) a -> Lens (f a) a -> Lens (f a, f a) a
+Lens (Cell a) a -> Lens 
+
+Lens x y x' y'
+
+-}
+
+{-
+can i just use regular lenses? I need to set in kind of a weird way though.
+-}
+
+data Lens a b = Lens (a -> (b, b -> a)) 
+-- newtype Lens a b = Lens forall r. (a -> (b -> (b -> a) -> r) -> r) -- cpsify for speed? van Laarhoven?
+
 -- SLens s a b = SLens (a -> ST s (b, b -> ST s a)) mutable update
 -- MLens a b = MLens (a -> m (b , b -> m a)) -- monadic lens
--- 
+-- KLens a b = KLens (a -> (b, k b a)) ---- this is sort of what Conal wrote.
 comp :: Lens b c -> Lens a b -> Lens a c
 comp (Lens f) (Lens g) = Lens $ \x -> let (y, g') = g x in
                                       let (z, f') = f y in
@@ -270,7 +342,11 @@ gaussK :: Lens (Cell (Cell a)) (Cell a) -- we need the context Cell
 gaussK = Lens $ \case (Cell phi1 j1 (Cell phi2 j2 y)) -> (Cell phi2 (j2 - phi1) y , \case (Cell phi2' j2' z) -> let j1' = j1 - phi2' in  -- moving the triangular upsolve to the right hand side
                                                                                                              Cell (- j1' / 2) j1 (Cell phi2' j2 z))
 
-
+-- interface in , internals, interface out. was the previous way of talking about it. But then the internals grow, which is fine
+-- compose :: Lens in internal out -> Lens in' internal' out' -> Lens in (internal, out, in', internal') out
+-- some ind of 2 category? Enriched? The morphisms have this internal structure.
+-- this is more a containing relationship. The larger context can be converted into the smaller context.                                                                                                             
+-- 
 
 g2 :: Lens (Cell (Cell (Cell a))) (Cell a)
 g2 = gaussK `comp` gaussK
@@ -297,8 +373,36 @@ sol = ((3><3) [-2,1,0,
 
 -- can do inner block solves also (via an iterative method perhaps)
 -- this is reminsecent of a multiscale attack.
+parC :: Lens a a' -> Lens b b' -> Lens (a,b) (a',b')
+parC (Lens f) (Lens g) = Lens $ \(x,y) -> let (x', f') = f x in
+                                          let (y', g') = g y in
+                                          ((x',y') , f' *** g')
 
--- we can change this all into a continuation form
+-- profucntor optics paper
+data FunList a b t = Done t | More a (FunList a b (b -> t))
+-- contents and fill
+-- contents (s -> a^n)
+-- fill s -> b^n -> t
+-- s -> exists n. (a^n, a^n -> s) is a traversal. Could use a Vec. But we already have a Vec. Cell is a Vec
+-- s -> exists n, (Vec n a, Vec n a -> s)
+-- maybe we do need an applicative. We sort of need to zip together two rows to start going 2d.
+
+-- huh. A block wise schur is kind of the monoidal ppoduct here. No. monoidal product is pure dsum.
+-- actually composition? is kind of what plays the game of block wise stuff.
+{-
+
+if we want this to be not the case,
+comp :: Lens (a,a') a'
+
+
+schur :: Lens a a' -> (a -> b) -> (b -> a) -> Lens b b' -> Lens (a,b) (a',b')
+schur (Lens a) b c (Lens d) = Lens $ \(x,y) -> let (x', a') = a x in
+                                               let (y', d') = d x in
+                                               (       )
+-}
+-- Lens (f (g a)) (g a)
+
+                                               -- we can change this all into a continuation form
 -- 
 
 {-
