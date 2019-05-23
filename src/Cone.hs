@@ -117,7 +117,7 @@ findRay f r | Nothing <- (f r) = [r]
             | Just h  <- (f r) = r : (findRay f (projectoff (polar h) r))
 
 -- orthogonal set of vectors. If we don't ever peek under the cover, we cna guarantee that it is orhtogonalized and pruned.
-newtype Orthogonal v a = Orthogonal [v a] -- This is the kind of thing Ghosts of departed proofs might be cool for
+newtype Orthogonal v a = Orthogonal [v a] -- This is the kind of thing Ghosts of departed proofs might be cool for. We oculd also type level tag orthogonalized according to different metrics
 -- really I may want other containers. I could paramtrize over a general traversable perhaps?
 -- I'm goingto very likely want a queue. Okasaki queue? Because I'll be popping off the end.
 -- And really, I probably want a mutable version of f itself
@@ -146,7 +146,9 @@ appendOrthogonal h (Orthogonal hs) = let h' = foldr projectoff h hs in if (nearZ
 -- This is safe. Might be needed if I don't export the Orthogonal constructor.
 forgetOrthogonal :: Orthogonal f a -> [f a]
 forgetOrthogonal = coerce
-
+-- headOrthogonal
+-- tail Orthogonal
+-- dropLastOrhtoognal
 
 -- Does this make sense? I'm not 100% sure.
 -- projectOntoPlanes :: (HRep f a, Ray f a) -> (HRep f a, Ray f a) -- return the new orthogonal basis, pruned. We can completely avoid re-orthogonalizing also.
