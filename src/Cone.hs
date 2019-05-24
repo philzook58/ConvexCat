@@ -34,8 +34,11 @@ polar = coerce
 dpolar :: Ray f a -> HalfSpace f a 
 dpolar = coerce
 
-dual :: Dual f a -> f a
+dual :: f a -> (Dual f) a
 dual = coerce
+
+dual' :: (Dual f) a -> f a
+dual' d = absorbdual (dual d)
 
 -- ConvSet returns Nothing if (f a) is in the set and (Just Dual) giving a hyperplane in which the entire set is contained for which the original argument is not in the set.
 -- In other words, it tells you if in set, or gives simple "proof" that you are not in the set. And a clue for possible future inquiries.
@@ -60,7 +63,7 @@ projectoff :: (Metric v, Fractional a) => v a -> v a -> v a -- subtracts the fir
 projectoff b u =  u ^-^ (project b u)
 
 projectonto :: (Metric v, Fractional a) => Dual v a -> v a -> v a -- subtracts the first argument off of the second 
-projectonto b u =  u ^-^ (project (dual b) u)
+projectonto b u =  u ^-^ (project (dual' b) u)
 
 reflectover :: (Metric v, Fractional a) => v a -> v a -> v a -- reflect the second argument about the first
 reflectover b u =  u ^-^ (2 *^ (project b u))
@@ -69,8 +72,8 @@ reflectover b u =  u ^-^ (2 *^ (project b u))
 score :: (Metric f, Num a) => Ray f a -> HalfSpace f a -> a
 score v h = (polar h) `dot` v
 
-elemRH :: (Metric f, Ord a, Num a) => Ray f a -> HalfSpace f a -> Bool
-elemRH v h = (polar h) `dot` v >= 0
+elemRH :: (Metric f, Ord a, Num a) => f a -> (Dual f) a -> Bool
+elemRH v h = (dual' h) `dot` v >= 0
 
 
 
@@ -167,7 +170,42 @@ admmstep f g (u1, u2, l) = let u2' = proj1 (u1 ^+^ l) in
                            (u1', u2', l') where
     proj1 upl = maybe upl (flip projectonto upl) (f upl) -- it does feel very likely to be some duplication of work here.
     proj2 uml = maybe uml (flip projectonto uml) (g uml)
+
+
+data DD f a = DD {primalDD :: [f a], dualDD :: [Dual f a] }
+
+plane ::  (Functor f, Num a) => HalfSpace f a -> HRep f a
+plane h= [h,  (-1) *^ h]
 {-
+ddray :: (Traversable f, Additive f, Metric f, Fractional a) => Ray f a -> DD (Ray f) a
+ddray r = DD [r] hs where hs = concatMap (plane . polar . (projectonto (dpolar r))) basis  -- slightly over complete. We could then orthogonalize to remove also not compiling.
+
+-}
+ddhalfspace :: (Traversable f, Additive f, Metric f, Fractional a) => HalfSpace f a -> DD (Ray f) a 
+ddhalfspace h = DD rs [h] where rs = polar h : (map (projectonto h) (basisFor (polar h))) -- will be overcomplete. Could orthogonalize. 
+
+ddpolar :: DD f a -> DD (Dual f) a
+ddpolar (DD rs hs) = DD (coerce hs) (coerce rs) 
+
+
+
+ddintersect :: (Metric f, Ord a, Num a) => DD f a -> DD f a -> DD f a
+ddintersect (DD rs hs) (DD rs' hs') = DD  ([r |  r <- rs, all (elemRH r) hs'] ++ [r' |  r' <- rs', all (elemRH r') hs])  (hs ++ hs')
+
+-- a simple pruning. Prune any point that isn't tight on at least one plane. Maybe prune the bigger one first? There can still be tight planes that nevertheless redundant.
+-- There is presumably a large literaturee about these problems
+-- We may also want to prune any vertices that are literally mutiples of each other. Prune any that are linear sums of others.
+-- So any ray should be on at least (D-1?) planes to actually be a corner of the polyhedral cone
+-- likewise any plane should touch at least D-1 ray generators.
+ddprune (DD rs hs) = let rs' = [r | r <- rs, not (nearZero r), any (\h -> nearZero (score r h)) hs] in
+                     let hs' = [h | h <- hs, not (nearZero h), any (\r -> nearZero (score r h)) rs] in
+                     DD rs' hs' 
+
+
+-- cone containement of Hrep. Ax >= 0 ==> Bx >= 0 if exists D >=0 s.t. B >= DA. D is a linear derivation of the second equation from the first  
+
+-- ddhull (DD rs hs) (DD rs' hs') = DD (rs ++ rs') ?
+    {-
 There is an analong of admm that would work on lists of contraints, if that's what you're into.
 if I find a fixed point of admmstep, 
     I kind of get the sense this is not ok. pushing the fixes out later.
@@ -271,5 +309,17 @@ self dual embeddings,
 affine embeddings,
 function to set problems
 minimization to feasibility problems
+
+-}
+
+{-
+
+
+Does the optimization package make all this ridiculous?
+
+I like the penalty interior point method. Hmm. Actually, wait, they are using penalty, not interior point. Why is that?
+Anyhow, that is good enough probably for a demo mixed integer program using logicT / list search.
+
+
 
 -}
