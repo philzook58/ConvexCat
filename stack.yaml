@@ -40,6 +40,10 @@ packages:
 extra-deps:
 - optimization-0.1.9
 - distributive-0.5.3
+- limp-0.3.2.3
+- limp-cbc-0.3.2.3
+- glpk-hs-0.5
+- gasp-1.1.0.0
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

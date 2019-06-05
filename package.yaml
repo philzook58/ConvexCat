@@ -24,6 +24,11 @@ dependencies:
 - linear
 - optimization
 - ad
+- limp-cbc
+- adjunctions
+- distributive
+- limp
+#- glpk-hs
 
 library:
   source-dirs: src

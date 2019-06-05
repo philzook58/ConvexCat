@@ -8,7 +8,10 @@ import Linear.V4
 import Linear.Epsilon
 import Data.Coerce
 import Linear.V1
+import Linear.V2
+import Linear.V3
 import Data.List (unfoldr)
+import Data.Functor.Product
 -- import Data.Maybe (fromMaybe)
 
 
@@ -43,7 +46,42 @@ dual' d = absorbdual (dual d)
 -- ConvSet returns Nothing if (f a) is in the set and (Just Dual) giving a hyperplane in which the entire set is contained for which the original argument is not in the set.
 -- In other words, it tells you if in set, or gives simple "proof" that you are not in the set. And a clue for possible future inquiries.
 type ConvCone f a = f a -> Maybe (Dual f a)
+-- forcing it to give you  something extremal in some sense is nice.
+type ConvCone' f a = f a -> Maybe (Dual f a, f a) --
+
+{-
+Gives nearest cone to given ray and dual supporting plane. Hmm. Maybe I don't have to give f a back because you can just project it onto the given plane if you like.
+I think standard projection works fine
+We're implcitly using max  (u dot v) / |u| |v| s.t. u in K
+This is indeed a reasonable kind of the conification of the support function.
+The support function form of a convex set is a black box that can give the maximal point for any linear obective.
+I've struggled with
+
+-}
+
+{-
+Convex Relation need an intput and output
+
+trans :: ConvRel (f :*: g) h -> ConvRel f (g :*: h)
+untrans = inverse
+
+converse :: ConvRel f g -> ConRel g f
+compose :: ConvRel f g -> ConvRel g h -> ConvRel f h -- hmm.
+meet :: ConvRel f g -> ConvRel f g -> ConvRel f g
+join :: ConvRel f g -> ConvRel f g -> ConvRel f g
+leftdiv :: --hmm
+rightdiv :: --hmm
+
+lift :: ConvCone f -> ConvRel f f 
+dup :: ConvRel f (Product f f)
+par :: ConRel f g -> ConvRel h k -> ConvRel (Product f h) (Product g k)
+projEq  = converse dup 
+
+-}
+newtype ConvRel f g a = ConveRel (ConvCone (Product f g) a)
+
 -- Or could call objective
+
 newtype Max a = Max (V1 a) deriving (Eq, Ord, Show, Read, Monad, Functor, Applicative, Foldable, Traversable, Additive, Metric, Fractional , Num, Epsilon)
 newtype Domain f a = Domain (f a) deriving (Eq, Ord, Show, Read, Monad, Functor, Applicative, Foldable, Traversable, Additive, Metric, Fractional , Num, Epsilon)
 
@@ -82,7 +120,11 @@ elemRH v h = (dual' h) `dot` v >= 0
 halfcone :: (Metric f, Ord a, Num a) => HalfSpace f a -> ConvCone (Ray f) a
 halfcone h r | r `elemRH` h = Nothing
              | otherwise  = Just h
-
+{-
+halfcone' :: (Metric f, Ord a, Num a) => HalfSpace f a -> ConvCone (Ray f) a
+halfcone' h r | r `elemRH` h = Nothing
+              | otherwise  = Just h
+-}
 -- From a collection of halfplanes, get the worst scoring one. Seems like a good start for a greedy method. proto simplex.
 -- It might be wise to return a collection of the worst socring
 -- Or to keep a heap rather than a list? Ehh.
@@ -171,11 +213,22 @@ admmstep f g (u1, u2, l) = let u2' = proj1 (u1 ^+^ l) in
     proj1 upl = maybe upl (flip projectonto upl) (f upl) -- it does feel very likely to be some duplication of work here.
     proj2 uml = maybe uml (flip projectonto uml) (g uml)
 
+admm f g = iterate (admmstep f g)
+
+-- no. I'm not doing something right. I;m losing the planes so I don't get closure
+-- intersect' :: ConvCone (Ray f) a -> ConvCone (Ray f) a -> ConvCone (Ray f) a
+-- intersect' f g r = (take 20 (admm f g)
+
+ex2 = admm f g (Ray $ V2 1 0, Ray $ V2 1 0, Ray $ V2 0 0) where
+        f = halfcone (Dual $ Ray (V2 1 0))
+        g = halfcone (Dual $ Ray (V2 (-1) 1))
+
+
 
 data DD f a = DD {primalDD :: [f a], dualDD :: [Dual f a] }
 
 plane ::  (Functor f, Num a) => HalfSpace f a -> HRep f a
-plane h= [h,  (-1) *^ h]
+plane h = [h,  (-1) *^ h]
 {-
 ddray :: (Traversable f, Additive f, Metric f, Fractional a) => Ray f a -> DD (Ray f) a
 ddray r = DD [r] hs where hs = concatMap (plane . polar . (projectonto (dpolar r))) basis  -- slightly over complete. We could then orthogonalize to remove also not compiling.
@@ -321,5 +374,20 @@ I like the penalty interior point method. Hmm. Actually, wait, they are using pe
 Anyhow, that is good enough probably for a demo mixed integer program using logicT / list search.
 
 
+
+If it's easy, maybe it makes sense to compile to glpk or cbc
+https://kul-forbes.github.io/scs/
+https://www.chrisstucchio.com/blog/2012/linear_programming.html
+
+
+A couple algorithms:
+Just iterated projection
+ADMM styel. sort of damped projection
+take SVD of all active planes. Kind of an interior point method
+Do sinlge round of QR algorithm for svd. Low rank update of 
+    Guass newton aplicaable?
+    min_{|x|=1} (a^T x) ^2 / (a^T a)
+
+SVD
 
 -}
