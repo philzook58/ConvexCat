@@ -1,22 +1,20 @@
-{-# LANGUAGE ConstraintKinds, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes
+{-# LANGUAGE ConstraintKinds, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, NoImplicitPrelude
 #-}
 module LinRel where
 
 import Numeric.LinearAlgebra
-
+import Prelude hiding ((<>))
 type BEnum a = (Enum a, Bounded a) 
 enumAll :: (BEnum a) => [a]
 enumAll = [minBound .. maxBound]
 
 card :: forall a. (BEnum a) => Int
-card = (fromEnum (maxBound @a)) - (fromEnum (minBound @a))
+card = (fromEnum (maxBound @a)) - (fromEnum (minBound @a)) + 1
 
--- LinRel holds A x = b constraint
--- HLinRel
--- VLinRel
+-- HLinRel holds A x = b constraint
 data HLinRel a b = HLinRel (Matrix Double) (Vector Double)
 
--- x = A l + b
+-- x = A l + b. Generator constraint. 
 data VLinRel a b = VLinRel (Matrix Double) (Vector Double)
 
 
@@ -41,7 +39,7 @@ vzero = konst 0
 hcompose :: forall a b c. (BEnum a, BEnum b, BEnum c) => HLinRel b c -> HLinRel a b -> HLinRel a c
 hcompose (HLinRel a b) (HLinRel a' b') = let a'' = fromBlocks [[ a , vzero ( sb , cc)] , [vzero ( sb' , ca)  , a' ]  ] in
                                          let b'' = vjoin [b, b'] in 
-                                         let (VLinRel q p) = h2v (HLinRel a'' b'') in
+                                         let (VLinRel q p) = h2v (HLinRel a'' b'') in -- kind of a misuse
                                          let q' = (takeRows ca q) === (flipud (takeRows cc (flipud q))) in
                                          let [x,y,z] =  takesV [ca,cb,cc] p in
                                          let p'=  vjoin [x,z] in
@@ -62,7 +60,73 @@ hjoin v w = v2h $ vjoin' (h2v v) (h2v w)
 vjoin' :: VLinRel a b -> VLinRel a b -> VLinRel a b
 vjoin' (VLinRel a b) (VLinRel a' b') = VLinRel (a ||| a' ||| (asColumn (b - b'))) b
 
+-- no constraints, everything
+htop :: forall a b. (BEnum a, BEnum b) => HLinRel a b 
+htop = HLinRel (vzero (0,ca + cb)) (konst 0 0) where 
+                                      ca = card @a
+                                      cb = card @b 
+hbottom :: forall a b. (BEnum a, BEnum b) => HLinRel a b 
+hbottom = HLinRel (ident (ca + cb)) (konst 0 (ca + cb)) where 
+                                    ca = card @a
+                                    cb = card @b  
+                              
+
+hconverse :: forall a b. (BEnum a, BEnum b) => HLinRel a b -> HLinRel b a 
+hconverse (HLinRel a b) = HLinRel ( (dropColumns ca a) |||  (takeColumns ca a)) b where 
+    ca = card @a
+    cb = card @b  
+
+    -- this is numerically unacceptable
+-- forall l. A' ( A l + b) == b'
+vhsub :: VLinRel a b -> HLinRel a b -> Bool
+vhsub (VLinRel a b) (HLinRel a' b') = ((a' <> a) == 0) && (a' #> b == b')
+
+hsub :: HLinRel a b -> HLinRel a b -> Bool
+hsub h1 h2 = vhsub (h2v h1) h2
+
+-- I can't do this right?
+-- hcomplement :: HLinRel a b -> HLinRel a b
+-- hcomplement  
+
+hpar :: HLinRel a b -> HLinRel c d -> HLinRel (Either a c) (Either b d)
+hpar (HLinRel mab v) (HLinRel mcd v') = HLinRel (fromBlocks [ [mab, 0], [0 , mcd]]) (vjoin [v, v']) where
+
+hleft :: forall a b. (BEnum a, BEnum b) => HLinRel a (Either a b)
+hleft = HLinRel ( i ||| (- i) ||| (konst 0 (ca,cb))) (konst 0 ca) where 
+    ca = card @a
+    cb = card @b  
+    i = ident ca
+
+hright :: forall a b. (BEnum a, BEnum b) => HLinRel b (Either a b)
+hright = HLinRel ( i ||| (konst 0 (cb,ca)) ||| (- i) ) (konst 0 cb) where 
+    ca = card @a
+    cb = card @b  
+    i = ident cb
+
+
+
+-- smart constructors
+hLinRel :: forall a b. (BEnum a, BEnum b) => Matrix Double -> Vector Double -> Maybe (HLinRel a b) 
+hLinRel m v | cols m == (ca + cb) && (size v == rows m)  = Just (HLinRel m v)
+            |  otherwise = Nothing  where 
+                 ca = card @a
+                 cb = card @b  
+
+
+
+                 {-
+                 
+                 Is there a reasonable intepretation of kron?
+
+                 -}
 {-
+everything can be definedc inefficiently via v2s and h2v functions
+
+right division
+
+-}
+
+    {-
 Call them affine relations
 
 Join and meet aren't union and intersection.
