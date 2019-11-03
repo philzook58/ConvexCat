@@ -34,8 +34,8 @@ library:
   source-dirs: src
   dependencies:
   - hmatrix
-  extra-libraries: 
-  - iconv
+  #extra-libraries: 
+  #- iconv
 
 executables:
   lqr-exe:
