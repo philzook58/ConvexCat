@@ -1,75 +1,179 @@
-{-# LANGUAGE ConstraintKinds, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, NoImplicitPrelude
+{-# LANGUAGE ConstraintKinds, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, NoImplicitPrelude,
+    GeneralizedNewtypeDeriving, FlexibleContexts
 #-}
 module LinRel where
 
 import Numeric.LinearAlgebra
 import Prelude hiding ((<>))
+import Debug.Trace
 type BEnum a = (Enum a, Bounded a) 
-enumAll :: (BEnum a) => [a]
+enumAll :: (BEnum a) => [a] -- What about Void?
 enumAll = [minBound .. maxBound]
+
+
+
+
+data Void = Void' | Void'' -- SORRY MOM.
+instance Enum Void where
+  fromEnum Void' =  1
+  fromEnum Void'' = 0
+  toEnum 1 = Void'
+  toEnum 0 = Void''
+instance Bounded Void where
+  maxBound = Void''
+  minBound = Void'
+
+instance (Enum a, Enum b, Bounded a) => Enum (Either a b) where
+  fromEnum (Left a) = fromEnum a
+  fromEnum (Right b) = fromEnum b + fromEnum (maxBound @a) + 1
+  toEnum n | n <= ((fromEnum (maxBound @a)) - (fromEnum (minBound @a))) = Left (toEnum n)
+           | otherwise = Right (toEnum (n - fromEnum (maxBound @a))) 
+
+
+instance (Bounded a, Bounded b) => Bounded (Either a b) where
+  maxBound = Right maxBound
+  minBound = Left minBound
 
 card :: forall a. (BEnum a) => Int
 card = (fromEnum (maxBound @a)) - (fromEnum (minBound @a)) + 1
 
 -- HLinRel holds A x = b constraint
-data HLinRel a b = HLinRel (Matrix Double) (Vector Double)
+data HLinRel a b = HLinRel (Matrix Double) (Vector Double) deriving Show
 
 -- x = A l + b. Generator constraint. 
-data VLinRel a b = VLinRel (Matrix Double) (Vector Double)
+data VLinRel a b = VLinRel (Matrix Double) (Vector Double) deriving Show
 
 
+-- f(x) = xQx + bx
+data QuadOp a b = QuadOp (Matrix Double) (Vector Double)
+{-
+qid :: QuadOp a a
+qid = ? -- a = a ? Need Relations too.
+
+qcompose :: QuadOp b c -> QuadOp a b -> QuadOp a c
+qcompose (QuadOp q c) (QuadOp q' c') = QuadOp q'' c'' where
+        where 
+                ca = card @a
+                cb = card @b 
+                cc = card @c
+                a = subMatrix (cb, cb) q
+                b = subMatrix (cb,cc) q
+                c = subMatrix (cc, cb) q
+                d = subMatrix (cc,cc) q
+                a' = subMatrix (ca, ca) q'
+                b' = subMatrix (ca, cb) q'
+                c' = subMatrix (cb, ca  q'
+                d' = subMatrix (cb, cb) q'
+                m = - (a + d')
+                q'' = fromBlocks [[a' + b' <> m </> c'   , b' <> m </> c ],  -- can memoize some of this
+                                  [b <> m </> c' , d - ]]
+                
+                a'' =  a' - b' <> m </> c'
+                [v1', v2'] = takesV [ca,cb] c'
+                [v1,  v2] = takesV [cb, cc] c
+                v3 = (v2' + v1) 
+                c'' = vJoin [v1' + m </> c #>  v3, ]
+
+        -}
+    {-
+    
+    Any cost outside the constraint space is irrelevant.
+    Q = V m V where m is fullrank.
+    c = Vc also
+
+    minimal sets
+    -}    
+        
+        -- break into pieces, form schur complement.
+
+-- if A x = b then x is in the nullspace + a vector b' solves the equation
 h2v :: HLinRel a b -> VLinRel a b
 h2v (HLinRel a b) = VLinRel a' b' where
-        b' = a <\> b -- leasty squares solution
+        b' = a <\> b -- least squares solution
         a' = nullspace a
 
--- is x = A l + b, then a' . x = a' . a l + a' b = a' b because a' . a = 0
+-- if x = A l + b, then A' . x = A' A l + A' b = A' b because A' A = 0
 v2h :: VLinRel a b -> HLinRel a b
-v2h (VLinRel a b) = HLinRel a' b' where
-        b' = a' #> b -- matrix multiply
-        a' = nullspace (tr a) -- orthogonal space to range of a.
+v2h (VLinRel a' b') = HLinRel a b where
+        b = a #> b' -- matrix multiply
+        a = tr $ nullspace (tr a') -- orthogonal space to range of a.
 
-lid :: forall a. BEnum a => HLinRel a a
-lid =  HLinRel (i ||| (- i)) (konst 0 (2 * s)) where 
+hid :: forall a. BEnum a => HLinRel a a
+hid =  HLinRel (i ||| (- i)) (vzero s) where 
                             s = card @a
                             i = ident s
 
+vzero :: Konst Double d c => d -> c Double
 vzero = konst 0
 
 hcompose :: forall a b c. (BEnum a, BEnum b, BEnum c) => HLinRel b c -> HLinRel a b -> HLinRel a c
-hcompose (HLinRel a b) (HLinRel a' b') = let a'' = fromBlocks [[ a , vzero ( sb , cc)] , [vzero ( sb' , ca)  , a' ]  ] in
-                                         let b'' = vjoin [b, b'] in 
+hcompose (HLinRel m b) (HLinRel m' b') = let a'' = fromBlocks [[       ma',           mb' ,    0       ],
+                                                               [         0 ,    mb,        mc          ]] in
+                                         let b'' = vjoin [b', b] in 
                                          let (VLinRel q p) = h2v (HLinRel a'' b'') in -- kind of a misuse
-                                         let q' = (takeRows ca q) === (flipud (takeRows cc (flipud q))) in
+                                         let q' = (takeRows ca q)  -- drop rows belonging to @b
+                                                       === 
+                                                  (dropRows (ca + cb) q) in
                                          let [x,y,z] =  takesV [ca,cb,cc] p in
-                                         let p'=  vjoin [x,z] in
-                                         v2h (VLinRel q' p') 
+                                         let p'=  vjoin [x,z] in -- rebuild without rows for @b
+                                         v2h (VLinRel q' p') -- reconstruct HLinRel
                                        where 
                                            ca = card @a
                                            cb = card @b 
                                            cc = card @c
-                                           sb   = size b
-                                           sb'  = size b'
+                                           sb = size b -- number of constraints in first relation
+                                           sb' = size b' -- number of constraints in second relation
+                                           ma' = takeColumns ca m'
+                                           mb' = dropColumns ca m'
+                                           mb = takeColumns cb m
+                                           mc = dropColumns cb m
 
+(<<<) :: forall a b c. (BEnum a, BEnum b, BEnum c) => HLinRel b c -> HLinRel a b -> HLinRel a c
+(<<<) = hcompose
+-- stack the constraints
 hmeet :: HLinRel a b -> HLinRel a b -> HLinRel a b
 hmeet (HLinRel a b) (HLinRel a' b') = HLinRel (a === a') (vjoin [b,b'])
-{- If they don't meet are we still ok? -}
+
+
+
+
+{- If they don't meet are we still ok? 
+
+I am not sure. Might be weird corner cases?
+
+-}
 
 hjoin :: HLinRel a b -> HLinRel a b -> HLinRel a b
 hjoin v w = v2h $ vjoin' (h2v v) (h2v w)
+
+-- hmatrix took vjoin from me :(
+-- joining means combining generators and adding a new generator
+-- Closed under affine combination l * x1 + (1 - l) * x2 
 vjoin' :: VLinRel a b -> VLinRel a b -> VLinRel a b
 vjoin' (VLinRel a b) (VLinRel a' b') = VLinRel (a ||| a' ||| (asColumn (b - b'))) b
 
 -- no constraints, everything
+-- trivially true
 htop :: forall a b. (BEnum a, BEnum b) => HLinRel a b 
-htop = HLinRel (vzero (0,ca + cb)) (konst 0 0) where 
+htop = HLinRel (vzero (1,ca + cb)) (konst 0 1) where 
                                       ca = card @a
                                       cb = card @b 
+{-
+hbottom :: forall a b. (BEnum a, BEnum b) => HLinRel a b 
+hbottom = HLinRel (vzero (1,ca + cb)) (konst 1 1) where 
+                                      ca = card @a
+                                      cb = card @b       
+                                      -}                                
+-- all the constraints! Only the origin.
+-- no. it should be the empty set. Impossible to satisfy.
+-- 0 x = 1 is impossible
+-- not gonna play nice.
+{-
 hbottom :: forall a b. (BEnum a, BEnum b) => HLinRel a b 
 hbottom = HLinRel (ident (ca + cb)) (konst 0 (ca + cb)) where 
                                     ca = card @a
                                     cb = card @b  
-                              
+  -}                            
 
 hconverse :: forall a b. (BEnum a, BEnum b) => HLinRel a b -> HLinRel b a 
 hconverse (HLinRel a b) = HLinRel ( (dropColumns ca a) |||  (takeColumns ca a)) b where 
@@ -79,10 +183,26 @@ hconverse (HLinRel a b) = HLinRel ( (dropColumns ca a) |||  (takeColumns ca a)) 
     -- this is numerically unacceptable
 -- forall l. A' ( A l + b) == b'
 vhsub :: VLinRel a b -> HLinRel a b -> Bool
-vhsub (VLinRel a b) (HLinRel a' b') = ((a' <> a) == 0) && (a' #> b == b')
+vhsub (VLinRel a b) (HLinRel a' b') = (naa' <=  1e-10 * (norm_2 a') * (norm_2 a)  ) && ((norm_2 ((a' #> b) - b')) <= 1e-10 * (norm_2 b')  ) where
+          naa' = norm_2 (a' <> a)
 
 hsub :: HLinRel a b -> HLinRel a b -> Bool
 hsub h1 h2 = vhsub (h2v h1) h2
+
+heq :: HLinRel a b -> HLinRel a b -> Bool
+heq a b = (hsub a b) && (hsub b a)
+
+
+instance Ord (HLinRel a b) where
+  (<=) = hsub
+  (>=) = flip hsub 
+
+
+
+
+instance Eq (HLinRel a b) where
+  (==) = heq
+
 
 -- I can't do this right?
 -- hcomplement :: HLinRel a b -> HLinRel a b
@@ -91,6 +211,20 @@ hsub h1 h2 = vhsub (h2v h1) h2
 hpar :: HLinRel a b -> HLinRel c d -> HLinRel (Either a c) (Either b d)
 hpar (HLinRel mab v) (HLinRel mcd v') = HLinRel (fromBlocks [ [mab, 0], [0 , mcd]]) (vjoin [v, v']) where
 
+
+
+{-
+        -- Void is unit for Either.
+-- void has no inhabitants.... This is a bad boy.
+
+
+hcup :: HLinRel Void (Either a a)
+hcap :: HLinRel (Either a a) Void
+
+
+
+
+-}
 hleft :: forall a b. (BEnum a, BEnum b) => HLinRel a (Either a b)
 hleft = HLinRel ( i ||| (- i) ||| (konst 0 (ca,cb))) (konst 0 ca) where 
     ca = card @a
@@ -104,6 +238,46 @@ hright = HLinRel ( i ||| (konst 0 (cb,ca)) ||| (- i) ) (konst 0 cb) where
     i = ident cb
 
 
+hfan ::  forall a b c. BEnum a => HLinRel a b -> HLinRel a c -> HLinRel a (Either b c)
+hfan (HLinRel m v) (HLinRel m' v') = HLinRel (fromBlocks [ [ma, mb, 0], [ma', 0, mc']]) (vjoin [v,v']) where
+        ca = card @a
+        ma = takeColumns ca m 
+        mb = dropColumns ca m 
+        ma' = takeColumns ca m' 
+        mc' = dropColumns ca m' 
+
+
+hdump :: HLinRel a Void
+hdump = HLinRel 0 0
+
+hlabsorb :: HLinRel a b -> HLinRel (Either Void a) b
+hlabsorb (HLinRel m v) = (HLinRel m v)
+
+htrans :: HLinRel a (Either b c) -> HLinRel (Either a b) c 
+htrans (HLinRel m v) = HLinRel m v
+
+hswap :: forall a b. (BEnum a, BEnum b) => HLinRel (Either a b) (Either b a)
+hswap = HLinRel (fromBlocks [[ia ,0,0 ,-ia], [0, ib,-ib,0]]) (konst 0 (ca + cb)) where 
+        ca = card @a
+        cb = card @b  
+        ia = ident ca
+        ib = ident cb
+
+
+hsum :: forall a. BEnum a => HLinRel (Either a a) a
+hsum = HLinRel ( i ||| i ||| - i ) (konst 0 ca)  where 
+        ca = card @a 
+        i= ident ca
+
+hdup :: forall a. BEnum a => HLinRel a (Either a a)
+hdup = HLinRel (fromBlocks [[i, -i,0 ], [i, 0, -i]]) (konst 0 (ca + ca))  where 
+        ca = card @a 
+        i= ident ca
+
+-- hcup :: forall a. BEnum a => HLinRel Void (Either a a)
+-- hcup = -- or mainulate hid
+
+-- hcap :: forall a. BEnum a => HLinRel (Either a a) Void
 
 -- smart constructors
 hLinRel :: forall a b. (BEnum a, BEnum b) => Matrix Double -> Vector Double -> Maybe (HLinRel a b) 
@@ -111,6 +285,75 @@ hLinRel m v | cols m == (ca + cb) && (size v == rows m)  = Just (HLinRel m v)
             |  otherwise = Nothing  where 
                  ca = card @a
                  cb = card @b  
+
+-- a 2d space at every wire or current and voltage.
+data IV = I | V deriving (Show, Enum, Bounded, Eq, Ord)
+
+
+resistor :: Double -> HLinRel IV IV
+resistor r = HLinRel ( (2><4)  [ 1,0,-1,   0,
+                                 r, 1, 0, -1]) (konst 0 2)  
+
+bridge :: Double -> HLinRel (Either IV IV) (Either IV IV)
+bridge r = HLinRel (  (4><8) [ 1,0, 1,  0, -1, 0, -1,  0, -- current conservation
+                               0, 1, 0, 0, 0, -1 , 0,  0, --voltage maintained
+                               0, 0, 0, 1, 0,  0,  0, -1, -- voltage maintained
+                               r, 1, 0,-1, -r,  0,  0, 0  ]) (konst 0 4)  
+
+{- Legendre transformations in thermo are for open systems. SOmething to that -}
+{- Dependent sources. Well, these are goddamn cheating. -}
+
+{-
+
+A wire in a circuit has a potential (questionably) and a current running through it
+So our wires should have both of these variables.
+
+-}
+newtype VProbe = VProbe () deriving (Enum, Bounded, Show, Eq, Ord)
+vprobe :: HLinRel IV VProbe
+vprobe = HLinRel ( (2><3)  [1,0,0,
+                            0,1,-1]) (konst 0 2)                
+
+vsource :: Double -> HLinRel IV IV
+vsource v = HLinRel ( (2><4) [ 1,0,-1,   0,
+                               0, 1, 0, -1]) (fromList [0,v])  
+
+isource :: Double -> HLinRel IV IV
+isource i = HLinRel ( (2><4) [  1,0, -1,   0 , -- current conservation
+                                 1, 0, 0,  0]) (fromList [0,i])  
+
+
+-- the currents add, but the voltages dup. sum and dup are dual
+-- Or should it be |--|   a parallel short?
+-- Ad then we could open circuit one of them and absorb the Void
+-- to derive this
+cmerge :: HLinRel (Either IV IV) IV
+cmerge = HLinRel ( (3><4)  [1, 0, 1, 0, -1, 0,
+                            0,1,0,0,0 ,  -1  ,
+                            0,0,0,1, 0, -1])  (konst 0 3)
+
+open :: HLinRel IV Void
+open = HLinRel ( (1><2) [1,0]) (konst 0 1)
+
+
+cap :: HLinRel  (Either IV IV) Void
+cap  = hcompose open cmerge
+
+cup :: HLinRel Void (Either IV IV)
+cup = hconverse cap
+
+ground :: HLinRel IV Void
+ground = HLinRel ( (1><2) [ 0 , 1 ]) (vzero 1) 
+
+-- resistors in parallel.
+
+ex1 = hcompose (bridge 10) (bridge 10)
+ex2 = hcompose (resistor 10) (resistor 30) -- resistors in series.
+r20 :: HLinRel IV IV
+r20 = resistor 20
+
+divider :: Double -> Double -> HLinRel (Either IV IV) (Either IV IV)
+divider r1 r2 = hcompose (bridge r2) (hpar (resistor r1) hid) 
 
 
 

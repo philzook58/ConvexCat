@@ -124,13 +124,13 @@ instance (Enum a, Enum b, Bounded a) => Enum (a,b) where
   toEnum x =  let (a, b) = quotRem x (fromEnum (maxBound :: a)) in
                 (toEnum a   , toEnum b)
   fromEnum (a,b) =  (fromEnum (maxBound :: a)) * (fromEnum a) + (fromEnum b)
-  
+  {-
 instance (Enum a, Enum b, Bounded a) => Enum (Either a b) where
     toEnum x | x > (fromEnum (maxBound :: a)) = Left (toEnum x)
              | otherwise = Right $ toEnum (x - 1 - (fromEnum (maxBound :: a)))
     fromEnum (Left a) =  fromEnum a
     fromEnum (Right b) =  (fromEnum (maxBound :: a)) + 1 + (fromEnum b) 
-
+-}
 -- deriving instance (Enum a, Enum b) => Enum (a,b)
 
 
