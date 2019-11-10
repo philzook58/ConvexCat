@@ -12,7 +12,7 @@ enumAll = [minBound .. maxBound]
 
 
 
-
+-- A Hacked "Void" type to get card @Void = 0
 data Void = Void' | Void'' -- SORRY MOM.
 instance Enum Void where
   fromEnum Void' =  1
@@ -197,9 +197,6 @@ instance Ord (HLinRel a b) where
   (<=) = hsub
   (>=) = flip hsub 
 
-
-
-
 instance Eq (HLinRel a b) where
   (==) = heq
 
@@ -249,9 +246,12 @@ hfan (HLinRel m v) (HLinRel m' v') = HLinRel (fromBlocks [ [ma, mb, 0], [ma', 0,
 
 hdump :: HLinRel a Void
 hdump = HLinRel 0 0
-
+{-
 hlabsorb :: HLinRel a b -> HLinRel (Either Void a) b
 hlabsorb (HLinRel m v) = (HLinRel m v)
+-}
+hlabsorb ::forall a. BEnum a => HLinRel (Either Void a) a
+hlabsorb = HLinRel m v where (HLinRel m v) = hid @a 
 
 htrans :: HLinRel a (Either b c) -> HLinRel (Either a b) c 
 htrans (HLinRel m v) = HLinRel m v
@@ -299,6 +299,7 @@ bridge r = HLinRel (  (4><8) [ 1,0, 1,  0, -1, 0, -1,  0, -- current conservatio
                                0, 1, 0, 0, 0, -1 , 0,  0, --voltage maintained
                                0, 0, 0, 1, 0,  0,  0, -1, -- voltage maintained
                                r, 1, 0,-1, -r,  0,  0, 0  ]) (konst 0 4)  
+short = bridge 0
 
 {- Legendre transformations in thermo are for open systems. SOmething to that -}
 {- Dependent sources. Well, these are goddamn cheating. -}
