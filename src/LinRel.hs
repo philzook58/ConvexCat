@@ -209,6 +209,11 @@ hpar :: HLinRel a b -> HLinRel c d -> HLinRel (Either a c) (Either b d)
 hpar (HLinRel mab v) (HLinRel mcd v') = HLinRel (fromBlocks [ [mab, 0], [0 , mcd]]) (vjoin [v, v']) where
 
 
+hassoc :: forall a b c. (BEnum a, BEnum b, BEnum c) => HLinRel (Either (Either a b) c) (Either a (Either b c))
+hassoc = HLinRel m v where HLinRel m v = hid @((Either (Either a b) c))
+
+hassoc' :: forall a b c. (BEnum a, BEnum b, BEnum c) => HLinRel  (Either a (Either b c)) (Either (Either a b) c)
+hassoc' = HLinRel m v where HLinRel m v = hid @((Either (Either a b) c))
 
 {-
         -- Void is unit for Either.
@@ -301,8 +306,83 @@ bridge r = HLinRel (  (4><8) [ 1,0, 1,  0, -1, 0, -1,  0, -- current conservatio
                                r, 1, 0,-1, -r,  0,  0, 0  ]) (konst 0 4)  
 short = bridge 0
 
+
+
+first :: BEnum c => HLinRel a b -> HLinRel (Either a c) (Either b c)
+first f = hpar f hid 
+
+second :: BEnum a => HLinRel b c -> HLinRel (Either a b) (Either a c)
+second f = hpar hid f
+
+type HLinRel2D u d l r = HLinRel (Either u l) (Either d r)
+
+
+{-
+A stencil  of 2d resistors for tiling
+
+
+          u
+          /
+          \
+          /
+         |
+l -/\/\/----/\/\/\-  r
+         |
+         /
+         \
+         /
+         |
+         d
+
+
+        -}
+stencil :: HLinRel2D IV IV IV IV
+stencil = (hpar r10 r10) <<< short <<< (hpar r10 r10) where r10 = resistor 10
+
+horicomp :: forall w w' w'' w''' a b c. (BEnum w, BEnum w', BEnum a, BEnum w''', BEnum b, BEnum w'', BEnum c ) => HLinRel2D w' w'' b c -> HLinRel2D w w''' a b -> HLinRel2D (Either w' w) (Either w'' w''') a c
+horicomp f g = hcompose f' g' where 
+               f' :: HLinRel (Either (Either w' w''') b) (Either (Either w'' w''') c)
+               f' = (first hswap) <<< hassoc' <<< (hpar hid f) <<< hassoc <<<  (first hswap) 
+               g' :: HLinRel (Either (Either w' w) a) (Either (Either w' w''') b)
+               g' = hassoc' <<< (hpar hid g) <<< hassoc
+
+
+rotate :: (BEnum w, BEnum w', BEnum a, BEnum b) => HLinRel2D w w' a b -> HLinRel2D a b w w'                                      
+rotate f = hswap <<< f <<< hswap
+
+vertcomp :: (BEnum w, BEnum w', BEnum a, BEnum d, BEnum b, BEnum w'', BEnum c ) => HLinRel2D w'  w'' c d -> HLinRel2D w w' a b -> HLinRel2D w w'' (Either c a) (Either d b)
+vertcomp f g = rotate (horicomp (rotate f)  (rotate g) ) 
+
+{-
+traceV :: ->
+traceH :: ->
+
+
+  -}
+
+stencil2 = vertcomp h h where h = stencil `horicomp` stencil
+
+
+
 {- Legendre transformations in thermo are for open systems. SOmething to that -}
-{- Dependent sources. Well, these are goddamn cheating. -}
+{- Dependent sources. Well, these are goddamn cheating.
+We could do it though
+|   |
+I   alpha I
+|   |
+
+small signal models of transistor, op amps etc
+
+
+gyrator - would need polynomials from caps and inds
+would be kind of nice for boundary models
+
+kron instead of dsum - Quantum fields
+Kron relation might be nice for discussing remnant space of topological matter
+
+
+
+-}
 
 {-
 
@@ -356,13 +436,93 @@ r20 = resistor 20
 divider :: Double -> Double -> HLinRel (Either IV IV) (Either IV IV)
 divider r1 r2 = hcompose (bridge r2) (hpar (resistor r1) hid) 
 
+{-
+type StateCoState s = Either s s
+type ValueD s = s
 
 
-                 {-
-                 
-                 Is there a reasonable intepretation of kron?
+dynamics :: HLinRel (Either SHOState Control) SHOState
+dynamics = HLinRel ((2><5)  [ 1,  dt, 0, -1 ,  0,
+                              -dt, 1, dt, 0, -1 ])  (vzero 2)
+   where dt = 0.01  
 
-                 -}
+-- labsorb <<< (par initial_cond id)
+-}
+
+
+-- state of an oscillator
+data SHOState = X | P deriving (Show, Enum, Bounded, Eq, Ord)
+data Control = F  deriving (Show, Enum, Bounded, Eq, Ord)
+-- Costate newtype wrapper
+newtype Co a = Co a deriving (Show, Enum, Bounded, Eq, Ord)
+
+type M = Matrix Double
+dynamics :: forall x u. (BEnum x, BEnum u) =>  Matrix Double -> Matrix Double ->  
+  HLinRel (Either x u) x
+dynamics a b =  HLinRel (a ||| b ||| -i )  (vzero cx) where
+  cx = card @x
+  cu = card @u
+  i = ident cx
+
+initial_cond :: forall x. BEnum x => Vector Double-> HLinRel Void x
+initial_cond x0 =  HLinRel i x0 where
+  cx = card @x
+  i = ident cx
+
+valueUpdate :: forall x l. (BEnum x, BEnum l) =>  M -> M -> HLinRel (Either x l) l
+valueUpdate a q = HLinRel ((tr a) ||| q ||| i)  (vzero cl) where
+  cl = card @l
+  i = ident cl  
+
+optimal_u :: forall u l. (BEnum u, BEnum l) => 
+     M -> M -> HLinRel u l
+optimal_u r b = HLinRel (r ||| tr b) (vzero cu) where
+  cu = card @u
+ 
+step :: forall x u l. (BEnum x, BEnum u, BEnum l) => M -> M -> M -> M 
+        -> HLinRel (Either x l) (Either x l)
+step a b r q = 
+  f5 <<< f4 <<< hassoc' <<< f3 <<< f2 <<< hassoc <<< f1 where
+  f1 :: HLinRel (Either x l) (Either (Either x x) l)
+  f1 = first hdup
+  f2 :: HLinRel (Either x (Either x l)) (Either x l)
+  f2 = second (valueUpdate a q)
+  f3 ::  HLinRel (Either x l) (Either x (Either l l))
+  f3 = second hdup
+  f4 ::  HLinRel (Either (Either x l) l) (Either (Either x u) l)
+  f4 = first (second (hconverse (optimal_u r b)))
+  f5 ::  HLinRel (Either (Either x u) l) (Either x l)
+  f5 = first (dynamics a b)
+
+-- iterate (hcompose (step a b r q)) :: [HLinRel (Either x l) (Either x l)]
+
+
+
+ {-
+step :: forall x l. (BEnum x, BEnum l) => 
+   HLinRel (State + ValueD) (State + ValueD)
+step a b q r =                
+= dynamics, 
+  valueUpdate <<< fst
+  second optimal_u
+  par (par hid cup) hid
+   ::  , optimal_u
+-}
+{-
+cost :: HLinRel (Either (Co SHOState) SHOState Control) (Co SHOState)
+cost = HLinRel ((2><5) [ 1,  0, 0,  -1 ,  0,
+                        -dt, 1,  dt,  0,  -1 ])  (vzero 2)
+-}
+
+
+
+
+
+{-
+
+Is there a reasonable intepretation of kron?
+
+-}
 {-
 everything can be definedc inefficiently via v2s and h2v functions
 

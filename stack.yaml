@@ -34,16 +34,21 @@ resolver: lts-13.22
 #  - wai
 packages:
 - .
+#- location:
+#   git: https://github.com/jyp/glpk-hs.git
+
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - optimization-0.1.9
 - distributive-0.5.3
-- limp-0.3.2.3
-- limp-cbc-0.3.2.3
-- glpk-hs-0.5
+#- limp-0.3.2.3
+#- limp-cbc-0.3.2.3
+#- glpk-hs-0.5
 - gasp-1.1.0.0
+- git: https://github.com/marlls1989/glpk-hs.git
+  commit: 3be20e60344c1751629a57dbb45927ee33ee35c9
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

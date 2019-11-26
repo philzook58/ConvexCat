@@ -19,33 +19,26 @@ packages:
   original:
     hackage: distributive-0.5.3
 - completed:
-    hackage: limp-0.3.2.3@sha256:d2802905557ebabe27f2146b0e4e7695998a8d5a170bfa5ab34a7a5ecc0148db,3257
-    pantry-tree:
-      size: 2747
-      sha256: 037eb43de05a562aa89af3a0085c61ca3ef362a3c9719ec842a42967ba2f13d9
-  original:
-    hackage: limp-0.3.2.3
-- completed:
-    hackage: limp-cbc-0.3.2.3@sha256:285f01fa4f4638ac821fb3549d7046abcf44993e4ae747996bd96c0bf24a0887,18358
-    pantry-tree:
-      size: 32666
-      sha256: a3a6d835e831a468556d8d8d056df8b542fde0500bbc88bce8f6cda38478951b
-  original:
-    hackage: limp-cbc-0.3.2.3
-- completed:
-    hackage: glpk-hs-0.5@sha256:cc4996b33008fccce56c66c2862f53ead722d1e09a841d003f46851d75c2d7b8,2129
-    pantry-tree:
-      size: 1395
-      sha256: 2eb2556feefbeeb9097391744d7625cef10c3225ff1377763e08e3d5cfd72154
-  original:
-    hackage: glpk-hs-0.5
-- completed:
     hackage: gasp-1.1.0.0@sha256:14b3cd6f541ff3a4169147c9f461ca30a4c75b78da5c7292f88d241cb35892c0,633
     pantry-tree:
       size: 208
       sha256: 6cb716fc7e0be126f1e1f854172c4068077479d2f8282bb58d3b8411663039de
   original:
     hackage: gasp-1.1.0.0
+- completed:
+    cabal-file:
+      size: 2582
+      sha256: e70c66ece7ab22ea30ce6e8663e4e7de15befe82e87e69e0cc71330016e63de7
+    name: glpk-hs
+    version: 0.6.1
+    git: https://github.com/marlls1989/glpk-hs.git
+    pantry-tree:
+      size: 1609
+      sha256: 62f9769cef79828a57e6df36e6ca065537ba4738b646f29b397aee27749a35f5
+    commit: 3be20e60344c1751629a57dbb45927ee33ee35c9
+  original:
+    git: https://github.com/marlls1989/glpk-hs.git
+    commit: 3be20e60344c1751629a57dbb45927ee33ee35c9
 snapshots:
 - completed:
     size: 498186
